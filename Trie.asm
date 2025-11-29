@@ -3,6 +3,7 @@
 .MODEL SMALL
 .STACK 200H
 .DATA
+
 ; configuration
 MAX_NODES EQU 10
 NODE_SIZE EQU 53 ; 1 + 52
@@ -14,12 +15,15 @@ PATH_CHARS DB MAX_DEPTH DUP(0)
 PATH_SP DB 0
 WORD1 DB 'CAT$'
 WORD2 DB 'KIT$'
+WORD3 DB 'CATER$'
 MSG_INSERTED DB 'Inserted: $'
 MSG_FOUND DB 'Found: $'
 MSG_NOTFOUND DB 'Not Found: $'
 MSG_DELETED DB 'Deleted: $'
 NEWLINE DB 0DH,0AH,'$'
+
 .CODE
+; no input parameters, output parameters, AX = node offset
 CREATE_NODE PROC
     PUSH BX
     PUSH CX
@@ -40,13 +44,17 @@ CREATE_NODE PROC
     SUB AX, OFFSET TRIE_MEM ; return relative offset
     JMP CN_DONE
 NODE_FULL:
-    XOR AX, AX
+    XOR AX, AX ;Mov AX,0
 CN_DONE:
     POP DI
     POP CX
     POP BX
     RET
 CREATE_NODE ENDP
+
+; AL = char to get child for, BP = current node offset, AX = child node offset or 0
+; input parameters: AL = char, BP = current node offset
+;output parameters: AX = child node offset or 0
 GET_CHILD PROC
     PUSH BX
     PUSH SI
@@ -68,6 +76,9 @@ GC_DONE:
     POP BX
     RET
 GET_CHILD ENDP
+
+; input parameters: AL = char, BP = current node offset, DX = child node offset
+; output parameters: none
 SET_CHILD PROC
     PUSH BX
     PUSH SI
@@ -86,6 +97,9 @@ SC_DONE:
     POP BX
     RET
 SET_CHILD ENDP
+
+; input parameters: BP = current node offset
+; output parameters: AX = 0 if no children, non-zero if has children
 HAS_CHILD PROC
     PUSH CX
     PUSH SI
@@ -101,6 +115,10 @@ HC_LOOP:
     POP CX
     RET
 HAS_CHILD ENDP
+
+; Push current node offset (in AX) and char index (in DL) onto path stack
+; input parameters: AX = node offset, DL = char index
+; output parameters: none
 PUSH_PATH PROC
     PUSH SI
     MOV BX, OFFSET PATH_SP
@@ -120,6 +138,10 @@ PP_DONE:
     POP SI
     RET
 PUSH_PATH ENDP
+
+; Pop node offset and char index from path stack
+; input parameters: none
+; output parameters: AX = node offset, BL = char index
 POP_PATH PROC
     PUSH SI
     MOV BX, OFFSET PATH_SP
@@ -144,6 +166,9 @@ POP_DONE:
     POP SI
     RET
 POP_PATH ENDP
+
+; input parameters: AX = root node offset, DX = pointer to null-terminated string
+; output parameters: none
 INSERT PROC
     PUSH BX
     PUSH CX
@@ -179,6 +204,9 @@ INSERT_END:
     POP BX
     RET
 INSERT ENDP
+
+; input parameters: AX = root node offset, DX = pointer to null-terminated string
+; output parameters: AX = 1 if found, 0 if not found
 SEARCH PROC
     PUSH BX
     PUSH SI
@@ -208,6 +236,9 @@ SEARCH_NOTFOUND:
     POP BX
     RET
 SEARCH ENDP
+
+; input parameters: AX = root node offset, DX = pointer to null-terminated string
+; output parameters: AX = 1 if deleted, 0 if not found
 DELETE_FULL PROC
     PUSH BX
     PUSH CX
@@ -246,7 +277,6 @@ CLEANUP_LOOP:
     JNE CLEAN_DONE
     CALL POP_PATH
     CMP AX, 0
-
     JE CLEAN_DONE
     MOV BP, AX
     MOV AL, 'A'
@@ -271,12 +301,15 @@ DEL_FIN:
     POP BX
     RET
 DELETE_FULL ENDP
+
+; program entry point
 MAIN PROC
     MOV AX, @data
     MOV DS, AX
     MOV ES, AX
     CALL CREATE_NODE
     MOV BX, AX
+    ; Insert WORD1
     MOV DX, OFFSET WORD1
     MOV AX, BX
     CALL INSERT
@@ -289,9 +322,33 @@ MAIN PROC
     MOV DX, OFFSET NEWLINE
     MOV AH, 09H
     INT 21H
+    ; Insert WORD2
     MOV DX, OFFSET WORD2
     MOV AX, BX
     CALL INSERT
+    MOV DX, OFFSET MSG_INSERTED
+    MOV AH, 09H
+    INT 21H
+    MOV DX, OFFSET WORD2
+    MOV AH, 09H
+    INT 21H
+    MOV DX, OFFSET NEWLINE
+    MOV AH, 09H
+    INT 21H
+    ; Insert WORD3
+    MOV DX, OFFSET WORD3
+    MOV AX, BX
+    CALL INSERT
+    MOV DX, OFFSET MSG_INSERTED
+    MOV AH, 09H
+    INT 21H
+    MOV DX, OFFSET WORD3
+    MOV AH, 09H
+    INT 21H
+    MOV DX, OFFSET NEWLINE
+    MOV AH, 09H
+    INT 21H
+    ; Search WORD1
     MOV DX, OFFSET WORD1
     MOV AX, BX
     CALL SEARCH
@@ -312,6 +369,7 @@ AFTER_SEARCH1:
     MOV DX, OFFSET NEWLINE
     MOV AH, 09H
     INT 21H
+    ; Delete WORD1
     MOV DX, OFFSET WORD1
     MOV AX, BX
     CALL DELETE_FULL
@@ -332,6 +390,7 @@ AFTER_DEL:
     MOV DX, OFFSET NEWLINE
     MOV AH, 09H
     INT 21H
+    ; Search WORD1 after delete
     MOV DX, OFFSET WORD1
     MOV AX, BX
     CALL SEARCH
@@ -340,13 +399,34 @@ AFTER_DEL:
     MOV DX, OFFSET MSG_NOTFOUND
     MOV AH, 09H
     INT 21H
-    JMP END_PROG
+    JMP AFTER_SEARCH2
 PRINT_FOUND2:
     MOV DX, OFFSET MSG_FOUND
     MOV AH, 09H
     INT 21H
-END_PROG:
+AFTER_SEARCH2:
     MOV DX, OFFSET WORD1
+    MOV AH, 09H
+    INT 21H
+    MOV DX, OFFSET NEWLINE
+    MOV AH, 09H
+    INT 21H
+    ; Search WORD3 to confirm shared prefix not deleted
+    MOV DX, OFFSET WORD3
+    MOV AX, BX
+    CALL SEARCH
+    CMP AX, 1
+    JE PRINT_FOUND3
+    MOV DX, OFFSET MSG_NOTFOUND
+    MOV AH, 09H
+    INT 21H
+    JMP END_PROG
+PRINT_FOUND3:
+    MOV DX, OFFSET MSG_FOUND
+    MOV AH, 09H
+    INT 21H
+END_PROG:
+    MOV DX, OFFSET WORD3
     MOV AH, 09H
     INT 21H
     MOV AH, 4CH
